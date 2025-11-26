@@ -15,6 +15,35 @@ An automated Python system that monitors a YouTube Live stream for SOL (Solana) 
 - **Duplicate Prevention**: Avoids sending repeated alerts for the same signal
 - **Robust Error Handling**: Continues running despite temporary network or OCR errors
 - **Automatic Cleanup**: Manages screenshot storage to prevent disk space issues
+- **🧪 Dry-Run Testing Mode**: Test the entire system without sending emails (enabled by default)
+
+## 🚀 Quick Start - Testing Mode
+
+**The script is pre-configured for testing!** You can run it immediately without email setup:
+
+```bash
+# Install dependencies
+pip install -r requirements.txt
+playwright install chromium
+sudo apt install tesseract-ocr  # or: brew install tesseract
+
+# Run in testing mode (no emails sent)
+python sol_tracker_monitor.py
+```
+
+In **dry-run mode** (default), the script will:
+- ✅ Connect to YouTube and capture screenshots
+- ✅ Run OCR and detect signals
+- ✅ Log current SOL prices every 30 seconds
+- ✅ Show what emails WOULD be sent (but doesn't send them)
+- ❌ No email configuration needed
+
+See **[TESTING_GUIDE.md](TESTING_GUIDE.md)** for detailed testing instructions.
+
+When ready to send real emails (at home):
+1. Create `.env` with your Gmail App Password
+2. Change `DRY_RUN = False` in the script
+3. Run again - emails will now be sent!
 
 ## System Architecture
 
