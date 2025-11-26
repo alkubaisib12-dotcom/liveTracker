@@ -32,6 +32,9 @@ YOUTUBE_URL = "https://www.youtube.com/live/CF2SVyV8A4I?si=WukMf7n9bbRbrK_r"
 CHECK_INTERVAL_SECONDS = 30  # Check every 30 seconds
 DUPLICATE_COOLDOWN_MINUTES = 5  # Don't send same signal again for 5 minutes
 
+# Testing mode - set to True to log without sending emails
+DRY_RUN = True  # Set to False when ready to send real emails
+
 # Signal keywords to detect (case-insensitive)
 SIGNAL_KEYWORDS = ["BUY", "SHORT", "TAKE PROFIT"]
 
@@ -186,7 +189,13 @@ def extract_text_from_screenshot(screenshot_path: str) -> str:
         text = pytesseract.image_to_string(image)
 
         logger.info(f"OCR extracted {len(text)} characters")
-        logger.debug(f"OCR text preview: {text[:200]}")
+
+        # Log extracted text for analysis (first 500 chars or full text if shorter)
+        if text.strip():
+            preview = text[:500] if len(text) > 500 else text
+            logger.info(f"OCR Text Extracted:\n{'='*60}\n{preview}\n{'='*60}")
+        else:
+            logger.warning("OCR extracted empty text!")
 
         return text
 
@@ -295,12 +304,50 @@ def get_current_sol_price() -> Optional[float]:
 def send_email(signal: str, price: Optional[float], screenshot_path: str):
     """
     Send email alert with signal details and screenshot.
+    In DRY_RUN mode, logs what would be sent without actually sending.
 
     Args:
         signal: Detected signal (BUY, SHORT, TAKE PROFIT)
         price: Current SOL price in USDT
         screenshot_path: Path to screenshot attachment
     """
+    # Format price
+    price_str = f"${price:.2f}" if price else "N/A"
+
+    # Format timestamp
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S %Z")
+
+    # Create email body
+    body = f"""
+Detected Signal: {signal}
+
+Current SOL Price: {price_str} USDT
+Timestamp: {timestamp}
+
+Screenshot of the live tracker is attached.
+
+---
+This is an automated alert from the SOL Tracker Monitor.
+    """.strip()
+
+    # DRY RUN MODE - Just log what would be sent
+    if DRY_RUN:
+        logger.info("=" * 80)
+        logger.info("📧 [DRY RUN] EMAIL WOULD BE SENT:")
+        logger.info("=" * 80)
+        logger.info(f"To: {RECIPIENT_EMAIL}")
+        logger.info(f"Subject: SOL SIGNAL: {signal} at {price_str}")
+        logger.info("-" * 80)
+        logger.info("Body:")
+        logger.info(body)
+        logger.info("-" * 80)
+        logger.info(f"Attachment: {screenshot_path}")
+        logger.info("=" * 80)
+        logger.info("📧 [DRY RUN] Email NOT actually sent (DRY_RUN=True)")
+        logger.info("=" * 80)
+        return
+
+    # PRODUCTION MODE - Actually send email
     try:
         # Get email configuration from environment
         smtp_host = os.getenv('SMTP_HOST')
@@ -319,27 +366,7 @@ def send_email(signal: str, price: Optional[float], screenshot_path: str):
         msg = MIMEMultipart()
         msg['From'] = sender_email
         msg['To'] = RECIPIENT_EMAIL
-
-        # Format price
-        price_str = f"${price:.2f}" if price else "N/A"
-
-        # Subject
         msg['Subject'] = f"SOL SIGNAL: {signal} at {price_str}"
-
-        # Body
-        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S %Z")
-        body = f"""
-Detected Signal: {signal}
-
-Current SOL Price: {price_str} USDT
-Timestamp: {timestamp}
-
-Screenshot of the live tracker is attached.
-
----
-This is an automated alert from the SOL Tracker Monitor.
-        """.strip()
-
         msg.attach(MIMEText(body, 'plain'))
 
         # Attach screenshot
@@ -359,10 +386,10 @@ This is an automated alert from the SOL Tracker Monitor.
             server.login(smtp_username, smtp_password)
             server.send_message(msg)
 
-        logger.info("Email sent successfully!")
+        logger.info("✅ Email sent successfully!")
 
     except Exception as e:
-        logger.error(f"Failed to send email: {e}")
+        logger.error(f"❌ Failed to send email: {e}")
 
 
 def cleanup_old_screenshots(keep_last_n: int = 50):
@@ -399,6 +426,11 @@ def process_frame(page: Page) -> bool:
         bool: True if processing succeeded, False otherwise
     """
     try:
+        # Always fetch and log current SOL price
+        price = get_current_sol_price()
+        if price:
+            logger.info(f"💰 Current SOL/USDT Price: ${price:.4f}")
+
         # Capture screenshot
         screenshot_path = capture_screenshot(page)
         if not screenshot_path:
@@ -413,17 +445,17 @@ def process_frame(page: Page) -> bool:
         # Detect signal
         signal = detect_signal(text)
         if not signal:
-            logger.info("No trading signal detected in this frame")
+            logger.info("✅ No trading signal detected in this frame - monitoring continues")
             return True
+
+        # Signal detected!
+        logger.warning(f"🚨 SIGNAL DETECTED: {signal} 🚨")
 
         # Check if we should send alert
         if not should_send_alert(signal):
             return True
 
-        # Get current SOL price
-        price = get_current_sol_price()
-
-        # Send email alert
+        # Send email alert (or log in dry-run mode)
         send_email(signal, price, screenshot_path)
 
         # Update state
@@ -448,6 +480,18 @@ def main_loop():
     logger.info(f"Signal keywords: {', '.join(SIGNAL_KEYWORDS)}")
     logger.info(f"Duplicate cooldown: {DUPLICATE_COOLDOWN_MINUTES} minutes")
     logger.info(f"Recipient email: {RECIPIENT_EMAIL}")
+
+    if DRY_RUN:
+        logger.warning("=" * 80)
+        logger.warning("🧪 DRY RUN MODE ENABLED 🧪")
+        logger.warning("Emails will NOT be sent - only logged")
+        logger.warning("Set DRY_RUN=False in code to enable real email alerts")
+        logger.warning("=" * 80)
+    else:
+        logger.info("=" * 80)
+        logger.info("✉️  PRODUCTION MODE - Real emails will be sent")
+        logger.info("=" * 80)
+
     logger.info("=" * 80)
 
     iteration = 0
